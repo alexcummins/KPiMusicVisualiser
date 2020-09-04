@@ -1,5 +1,13 @@
+import display.Display
+import display.DisplayController
+import display.web.WebDisplay
+import java.awt.Color
 import javax.sound.sampled.*
+import kotlin.random.Random
 
+
+const val WIDTH = 35
+const val HEIGHT = 35
 
 fun main(args: Array<String>) {
     println("Hello world")
@@ -9,11 +17,31 @@ fun main(args: Array<String>) {
 
     microphone.startMic()
 
+    val display : Display = WebDisplay()
 
+    val controller = DisplayController(width = WIDTH, height = HEIGHT, display = display)
+
+    controller.initialise()
 
     while (true) {
-        microphone.getData()
+        for (x in 0..WIDTH) {
+            if (Random.nextBoolean()) {
+                controller.setColumn(Random.nextInt(0, WIDTH), Color(Random.nextInt(0, 256), Random.nextInt(0, 256), Random.nextInt(0, 256)))
+            } else {
+                controller.setRow(Random.nextInt(0, WIDTH), Color(Random.nextInt(0, 256), Random.nextInt(0, 256), Random.nextInt(0, 256)))
+            }
+            controller.update()
+        }
+        Thread.sleep(1000)
     }
+
+
+
+
+
+//    while (true) {
+//        microphone.getData()
+//    }
 
 
 //    initForLiveMonitor()
