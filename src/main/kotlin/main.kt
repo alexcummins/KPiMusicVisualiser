@@ -1,50 +1,115 @@
+import be.tarsos.dsp.util.PitchConverter
+import be.tarsos.dsp.util.fft.FFT
 import display.Display
 import display.DisplayController
 import display.web.WebDisplay
 import java.awt.Color
 import javax.sound.sampled.*
-import kotlin.random.Random
+import kotlin.math.max
+import kotlin.math.roundToInt
 
 
-const val WIDTH = 35
-const val HEIGHT = 35
+const val WIDTH = 10
+const val HEIGHT = 10
 
 fun main(args: Array<String>) {
     println("Hello world")
     println(args)
 
-    val microphone : Mic = Mic();
+    val microphone: Mic = Mic();
 
     microphone.startMic()
 
-    val display : Display = WebDisplay()
+    val display: Display = WebDisplay()
 
     val controller = DisplayController(width = WIDTH, height = HEIGHT, display = display)
 
     controller.initialise()
 
-    while (true) {
-        for (x in 0..WIDTH) {
-            if (Random.nextBoolean()) {
-                controller.setColumn(Random.nextInt(0, WIDTH), Color(Random.nextInt(0, 256), Random.nextInt(0, 256), Random.nextInt(0, 256)))
-            } else {
-                controller.setRow(Random.nextInt(0, WIDTH), Color(Random.nextInt(0, 256), Random.nextInt(0, 256), Random.nextInt(0, 256)))
-            }
-            controller.update()
+    val minFrequency = 50.0 // Hz
+    val maxFrequency = 11000.0 // Hz
+
+    val fftHandler: Mic.HandleFFT = Mic.HandleFFT { fft: FFT, amplitudes: FloatArray ->
+        var maxAmplitude = 0.0F
+        //for every pixel calculate an amplitude
+        val pixeledAmplitudes = FloatArray(WIDTH)
+        //iterate the large array and map to pixels
+        for (i in amplitudes.size / 800 until amplitudes.size) {
+            // sort out frequency to bin to make even out
+            val pixelX = frequencyToBin(i * 44100 / (amplitudes.size * 8).toDouble())
+            pixeledAmplitudes[pixelX] += amplitudes[i]
+            maxAmplitude = max(pixeledAmplitudes[pixelX], maxAmplitude)
         }
-        Thread.sleep(1000)
+//        print("[")
+//        pixeledAmplitudes.forEach {
+//            print(it)
+//            print(", ")
+//        }
+//        print("]")
+//        println()
+        for (x in 0 until WIDTH) {
+            val maxLight = scaleFreqBand(pixeledAmplitudes[x])
+            controller.setColumnUpTo(x, maxLight, Color.BLACK)
+            controller.clearColumnAbove(x, maxLight)
+        }
     }
 
-
-
-
+    microphone.subscribeToFFT(fftHandler)
 
 //    while (true) {
-//        microphone.getData()
+//        for (x in 0..WIDTH) {
+//            if (Random.nextBoolean()) {
+//                controller.setColumn(
+//                    Random.nextInt(0, WIDTH), Color(
+//                        Random.nextInt(0, 256), Random.nextInt(0, 256), Random.nextInt(
+//                            0,
+//                            256
+//                        )
+//                    )
+//                )
+//            } else {
+//                controller.setRow(
+//                    Random.nextInt(0, WIDTH), Color(
+//                        Random.nextInt(0, 256), Random.nextInt(0, 256), Random.nextInt(
+//                            0,
+//                            256
+//                        )
+//                    )
+//                )
+//            }
+//            controller.update()
+//        }
+//        Thread.sleep(1000)
 //    }
 
+}
 
-//    initForLiveMonitor()
+private fun frequencyToBin(frequency: Double): Int {
+    val minFrequency = 50.0 // Hz
+    val maxFrequency = 11000.0 // Hz
+    var bin = 0
+    if (frequency != 0.0 && frequency > minFrequency && frequency < maxFrequency) {
+        var binEstimate = 0.0
+        val minCent = PitchConverter.hertzToAbsoluteCent(minFrequency)
+        val maxCent = PitchConverter.hertzToAbsoluteCent(maxFrequency)
+        val absCent = PitchConverter.hertzToAbsoluteCent(frequency)
+        binEstimate = ((absCent - minCent) / (maxCent - minCent)) * WIDTH
+        if (binEstimate > 700) {
+            println(binEstimate.toString() + "")
+        }
+        bin = WIDTH - 1 - binEstimate.toInt()
+        if (bin == -1) {
+            println("HI")
+        }
+    }
+    return bin
+}
+
+fun scaleFreqBand(amplitude: Float): Int {
+    val C = 100  // Compactness of scale (graph stretched)
+    val N = HEIGHT  // Max number height of frequency scale
+    val x = amplitude
+    return (-((C * N) / (x + C)) + N).roundToInt()
 }
 
 private fun printMixers() {
@@ -70,41 +135,5 @@ private fun printMixers() {
                 println("\t-----$line")
             }
         }
-    }
-}
-
-private fun initForLiveMonitor() {
-    val format = AudioFormat(AudioFormat.Encoding.PCM_SIGNED, 44100F, 16, 2, 4, 44100F, false)
-    try {
-
-        //Speaker
-        val sourceLine = AudioSystem.getSourceDataLine(format) as SourceDataLine
-        sourceLine.open()
-
-        //Microphone
-        val targetLine = AudioSystem.getTargetDataLine(format) as TargetDataLine
-        targetLine.open()
-        val monitorThread: Thread = object : Thread() {
-            override fun run() {
-                targetLine.start()
-                sourceLine.start()
-                val data = ByteArray(targetLine.bufferSize / 5)
-                var readBytes: Int
-                while (true) {
-                    readBytes = targetLine.read(data, 0, data.size)
-                    sourceLine.write(data, 0, readBytes)
-                }
-            }
-        }
-        println("Start LIVE Monitor for 15 seconds")
-        monitorThread.start()
-        Thread.sleep(15000)
-        targetLine.stop()
-        targetLine.close()
-        println("End LIVE Monitor")
-    } catch (lue: LineUnavailableException) {
-        lue.printStackTrace()
-    } catch (ie: InterruptedException) {
-        ie.printStackTrace()
     }
 }

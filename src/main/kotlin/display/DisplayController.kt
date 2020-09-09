@@ -24,6 +24,19 @@ class DisplayController(private val width: Int, private val height: Int, private
         }
     }
 
+    fun setColumnUpTo(xCoordinate: Int, topCoordinate: Int, colour: Color) {
+        for (y in 1 until topCoordinate) {
+            setPixel(xCoordinate = xCoordinate, yCoordinate = y, colour = colour)
+        }
+    }
+
+    fun clearColumnAbove(xCoordinate: Int, topCoordinate: Int) {
+        for (y in topCoordinate until height) {
+            // CHANGE THIS LATER?
+            setPixel(xCoordinate = xCoordinate, yCoordinate = y, colour = Color.WHITE)
+        }
+    }
+
     fun setBorder(colour: Color) {
         setColumn(0, colour)
         setColumn(height - 1, colour)
