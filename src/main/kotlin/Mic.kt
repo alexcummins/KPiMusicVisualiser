@@ -2,10 +2,9 @@ import be.tarsos.dsp.AudioDispatcher
 import be.tarsos.dsp.AudioEvent
 import be.tarsos.dsp.AudioProcessor
 import be.tarsos.dsp.io.jvm.JVMAudioInputStream
+import be.tarsos.dsp.util.fft.BlackmanWindow
 import be.tarsos.dsp.util.fft.FFT
-import java.awt.Color
 import java.time.Instant
-import java.time.LocalDateTime
 import javax.sound.sampled.AudioFormat
 import javax.sound.sampled.AudioInputStream
 import javax.sound.sampled.AudioSystem
@@ -24,15 +23,15 @@ class Mic() {
     private lateinit var dispatcher: AudioDispatcher
 
     private val FFT_PROCESSOR: AudioProcessor = object : AudioProcessor {
-        var previousTime : Long = 0L
-        var fft = FFT(TARGET_DATA_LINE.bufferSize)
+        var previousTime: Long = 0L
+        var fft = FFT(TARGET_DATA_LINE.bufferSize * 2, BlackmanWindow())
         var amplitudes = FloatArray(TARGET_DATA_LINE.bufferSize / 2)
         override fun processingFinished() {
             // TODO Auto-generated method stub
         }
 
         override fun process(audioEvent: AudioEvent): Boolean {
-            if (Instant.now().toEpochMilli() > previousTime + 200 ) {
+            if (Instant.now().toEpochMilli() > previousTime + 100) {
                 previousTime = Instant.now().toEpochMilli()
 
 //                println("Not Throttled")
