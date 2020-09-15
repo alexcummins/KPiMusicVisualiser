@@ -1,7 +1,6 @@
 import be.tarsos.dsp.util.PitchConverter
 import be.tarsos.dsp.util.fft.FFT
 import display.Display
-import display.DisplayController
 import display.web.WebDisplay
 import java.awt.Color
 import javax.sound.sampled.*
@@ -9,8 +8,8 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 
-const val WIDTH = 10
-const val HEIGHT = 10
+const val WIDTH = 50
+const val HEIGHT = 50
 
 fun main(args: Array<String>) {
     println("Hello world")
@@ -20,11 +19,9 @@ fun main(args: Array<String>) {
 
     microphone.startMic()
 
-    val display: Display = WebDisplay()
+    val display: Display = WebDisplay(width = WIDTH, height = HEIGHT)
 
-    val controller = DisplayController(width = WIDTH, height = HEIGHT, display = display)
-
-    controller.initialise()
+    display.initialise()
 
     val minFrequency = 50.0 // Hz
     val maxFrequency = 11000.0 // Hz
@@ -36,22 +33,23 @@ fun main(args: Array<String>) {
         //iterate the large array and map to pixels
         for (i in amplitudes.size / 800 until amplitudes.size) {
             // sort out frequency to bin to make even out
-            val pixelX = frequencyToBin(i * 44100 / (amplitudes.size * 8).toDouble())
+            val pixelX = frequencyToBin((i * 44100 / (amplitudes.size)).toDouble())
             pixeledAmplitudes[pixelX] += amplitudes[i]
             maxAmplitude = max(pixeledAmplitudes[pixelX], maxAmplitude)
         }
-//        print("[")
-//        pixeledAmplitudes.forEach {
-//            print(it)
-//            print(", ")
-//        }
-//        print("]")
-//        println()
+        print("[")
+        pixeledAmplitudes.forEach {
+            print(it)
+            print(", ")
+        }
+        print("]")
+        println()
         for (x in 0 until WIDTH) {
             val maxLight = scaleFreqBand(pixeledAmplitudes[x])
-            controller.setColumnUpTo(x, maxLight, Color.BLACK)
-            controller.clearColumnAbove(x, maxLight)
+            display.setColumnUpTo(x, maxLight, Color.BLACK)
+            display.clearColumnAbove(x, maxLight)
         }
+        display.update()
     }
 
     microphone.subscribeToFFT(fftHandler)
@@ -106,7 +104,7 @@ private fun frequencyToBin(frequency: Double): Int {
 }
 
 fun scaleFreqBand(amplitude: Float): Int {
-    val C = 100  // Compactness of scale (graph stretched)
+    val C = 1  // Compactness of scale (graph stretched)
     val N = HEIGHT  // Max number height of frequency scale
     val x = amplitude
     return (-((C * N) / (x + C)) + N).roundToInt()
