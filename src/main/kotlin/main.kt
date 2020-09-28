@@ -1,58 +1,37 @@
-import be.tarsos.dsp.util.PitchConverter
 import be.tarsos.dsp.util.fft.FFT
 import display.Display
 import display.web.WebDisplay
 import java.awt.Color
-import javax.sound.sampled.*
+import java.time.Instant
+import javax.sound.sampled.AudioSystem
+import javax.sound.sampled.Line
+import javax.sound.sampled.LineUnavailableException
+import javax.sound.sampled.TargetDataLine
+import kotlin.math.log2
 import kotlin.math.max
+import kotlin.math.pow
 import kotlin.math.roundToInt
 
 
-const val WIDTH = 50
-const val HEIGHT = 50
+const val WIDTH = 20
+const val HEIGHT = 20
 
 fun main(args: Array<String>) {
     println("Hello world")
     println(args)
 
-    val microphone: Mic = Mic();
+    // Current mic caps out around 4000 hz
+    // Need to modify visualiser so it can go up to a certain max frequency.)
+    // As otherwise visualiser range is only up until about half the width. (rest is just 0 as mic detects 0 amplitude)
 
+    val microphone = Mic();
     microphone.startMic()
 
     val display: Display = WebDisplay(width = WIDTH, height = HEIGHT)
-
     display.initialise()
 
-    val minFrequency = 50.0 // Hz
-    val maxFrequency = 11000.0 // Hz
-
-    val fftHandler: Mic.HandleFFT = Mic.HandleFFT { fft: FFT, amplitudes: FloatArray ->
-        var maxAmplitude = 0.0F
-        //for every pixel calculate an amplitude
-        val pixeledAmplitudes = FloatArray(WIDTH)
-        //iterate the large array and map to pixels
-        for (i in amplitudes.size / 800 until amplitudes.size) {
-            // sort out frequency to bin to make even out
-            val pixelX = frequencyToBin((i * 44100 / (amplitudes.size)).toDouble())
-            pixeledAmplitudes[pixelX] += amplitudes[i]
-            maxAmplitude = max(pixeledAmplitudes[pixelX], maxAmplitude)
-        }
-        print("[")
-        pixeledAmplitudes.forEach {
-            print(it)
-            print(", ")
-        }
-        print("]")
-        println()
-        for (x in 0 until WIDTH) {
-            val maxLight = scaleFreqBand(pixeledAmplitudes[x])
-            display.setColumnUpTo(x, maxLight, Color.BLACK)
-            display.clearColumnAbove(x, maxLight)
-        }
-        display.update()
-    }
-
-    microphone.subscribeToFFT(fftHandler)
+    val handler: Mic.FFTHandler = DisplayHandler(display)
+    microphone.subscribeToFFT(handler)
 
 //    while (true) {
 //        for (x in 0..WIDTH) {
@@ -82,32 +61,63 @@ fun main(args: Array<String>) {
 
 }
 
-private fun frequencyToBin(frequency: Double): Int {
-    val minFrequency = 50.0 // Hz
-    val maxFrequency = 11000.0 // Hz
-    var bin = 0
-    if (frequency != 0.0 && frequency > minFrequency && frequency < maxFrequency) {
-        var binEstimate = 0.0
-        val minCent = PitchConverter.hertzToAbsoluteCent(minFrequency)
-        val maxCent = PitchConverter.hertzToAbsoluteCent(maxFrequency)
-        val absCent = PitchConverter.hertzToAbsoluteCent(frequency)
-        binEstimate = ((absCent - minCent) / (maxCent - minCent)) * WIDTH
-        if (binEstimate > 700) {
-            println(binEstimate.toString() + "")
-        }
-        bin = WIDTH - 1 - binEstimate.toInt()
-        if (bin == -1) {
-            println("HI")
-        }
-    }
-    return bin
+private fun calculateFrequency(sample: Int, samples: Int, sampleRate: Int = 44100): Int =
+    sample * sampleRate / (samples)
+
+private fun frequencyToBin(frequency: Float, maxFrequency: Float, bins: Int, gamma: Double = 1.5): Int {
+    return ((((frequency / maxFrequency).pow(1.0.div(gamma).toFloat())) * (bins - 1))).roundToInt()
 }
 
-fun scaleFreqBand(amplitude: Float): Int {
-    val C = 1  // Compactness of scale (graph stretched)
+fun scaleFreqBand(magnitude: Float): Int {
+    val C = 15  // Compactness of scale (graph stretched)
     val N = HEIGHT  // Max number height of frequency scale
-    val x = amplitude
+    val x = magnitude
     return (-((C * N) / (x + C)) + N).roundToInt()
+}
+
+private class DisplayHandler(val display: Display) : Mic.FFTHandler {
+    var previousTime: Long = 0L
+    var cumulativeMagnitudes = FloatArray(WIDTH)
+    var samples = 0
+
+    private val translationConstant = 1
+
+    override fun accept(fft: FFT, magnitudes: FloatArray) {
+        //for every pixel calculate an magnitude
+        //iterate the large array and map to pixels
+        val maxFrequency = calculateFrequency(magnitudes.size - 1, magnitudes.size).toFloat()
+        var maxBinMagnitude = FloatArray(WIDTH)
+        for (i in magnitudes.size / 800 until magnitudes.size) {
+            val bin = frequencyToBin((calculateFrequency(i, magnitudes.size)).toFloat(), maxFrequency, WIDTH)
+            maxBinMagnitude[bin] = max(maxBinMagnitude[bin], magnitudes[i])
+        }
+        for (bin in cumulativeMagnitudes.indices) {
+            cumulativeMagnitudes[bin] += log2((maxBinMagnitude[bin] + translationConstant).pow(2))
+        }
+        samples += 1
+        if (Instant.now().toEpochMilli() > previousTime + 5) {
+            previousTime = Instant.now().toEpochMilli()
+            outputDisplay()
+            samples = 0
+            cumulativeMagnitudes = FloatArray(WIDTH)
+        }
+    }
+
+    private fun outputDisplay() {
+        print("[")
+        cumulativeMagnitudes.forEach {
+            print(it / samples)
+            print(", ")
+        }
+        print("]")
+        println()
+        for (x in 0 until WIDTH) {
+            val maxLight = scaleFreqBand(cumulativeMagnitudes[x] / samples)
+            display.setColumnUpTo(x, maxLight, Color.BLACK)
+            display.clearColumnAbove(x, maxLight)
+        }
+        display.update()
+    }
 }
 
 private fun printMixers() {
